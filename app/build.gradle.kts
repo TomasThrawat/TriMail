@@ -7,17 +7,15 @@ android {
     namespace = "com.trimaill.app"
     compileSdk = 35
 
-    val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID").orNull.orEmpty()
-        .replace("\", "\\")
-        .replace(""", "\"")
-        .replace(""", "\"")
-
     defaultConfig {
         applicationId = "com.trimaill.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID").orNull.orEmpty()
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", ""$googleWebClientId"")
     }
 
     buildTypes {
@@ -29,10 +27,6 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-    }
-
-    defaultConfig {
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", ""$escapedGoogleWebClientId"")
     }
 
     packaging {
