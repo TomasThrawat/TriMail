@@ -1,6 +1,7 @@
 package com.trimaill.app.data
 
 import android.content.Context
+import com.trimaill.app.model.ConnectionState
 import com.trimaill.app.model.MailAccount
 import com.trimaill.app.model.Provider
 
@@ -17,7 +18,14 @@ class AccountStore(context: Context) {
             email = email,
             provider = runCatching {
                 Provider.valueOf(providerName)
-            }.getOrDefault(Provider.GOOGLE)
+            }.getOrDefault(Provider.GOOGLE),
+            state = if (
+                email.isNotBlank() && prefs.getBoolean("connected_" + slot, false)
+            ) {
+                ConnectionState.CONNECTED
+            } else {
+                ConnectionState.EMPTY
+            }
         )
     }
 
@@ -26,6 +34,7 @@ class AccountStore(context: Context) {
             accounts.forEach { account ->
                 putString("email_" + account.slot, account.email)
                 putString("provider_" + account.slot, account.provider.name)
+                putBoolean("connected_" + account.slot, account.state == ConnectionState.CONNECTED)
             }
         }.apply()
     }

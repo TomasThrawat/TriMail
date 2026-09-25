@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.trimaill.app.data.AccountStore
+import com.trimaill.app.data.GoogleAuthClient
 import com.trimaill.app.data.MailRepository
 import com.trimaill.app.model.ConnectionState
 import com.trimaill.app.model.MailAccount
@@ -18,9 +19,16 @@ import kotlinx.coroutines.launch
 class MailViewModel(app: Application) : AndroidViewModel(app) {
     private val store = AccountStore(app)
     private val repository = MailRepository()
+    private val googleAuthClient = GoogleAuthClient(app)
 
     private val _accounts = MutableStateFlow(store.load())
     val accounts: StateFlow<List<MailAccount>> = _accounts.asStateFlow()
+
+    private val _authMessage = MutableStateFlow<String?>(null)
+    val authMessage: StateFlow<String?> = _authMessage.asStateFlow()
+
+    private val _googleBusy = MutableStateFlow(false)
+    val googleBusy: StateFlow<Boolean> = _googleBusy.asStateFlow()
 
     fun updateAccount(slot: Int, email: String, provider: Provider) {
         _accounts.value = _accounts.value.map {
@@ -36,14 +44,76 @@ class MailViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun connectGoogle(slot: Int, typedEmail: String) {
+        val email = typedEmail.trim()
+        if (email.isBlank() || _googleBusy.value) return
+
+        _googleBusy.value = true
+        _accounts.value = _accounts.value.map {
+            if (it.slot == slot) {
+                it.copy(state = ConnectionState.CONNECTING)
+            } else {
+                it
+            }
+        }
+
+        viewModelScope.launch {
+            try {
+                googleAuthClient.signIn(email)
+                    .onSuccess { profile ->
+                        val updated = _accounts.value.map {
+                            if (it.slot == slot) {
+                                it.copy(
+                                    email = profile.email,
+                                    provider = Provider.GOOGLE,
+                                    state = ConnectionState.CONNECTED
+                                )
+                            } else {
+                                it
+                            }
+                        }
+                        _accounts.value = updated
+                        store.save(updated)
+                        _authMessage.value = "Google account connected: " + profile.email
+                    }
+                    .onFailure { error ->
+                        _accounts.value = _accounts.value.map {
+                            if (it.slot == slot) {
+                                it.copy(state = ConnectionState.EMPTY)
+                            } else {
+                                it
+                            }
+                        }
+                        _authMessage.value = error.message ?: "Google sign-in failed."
+                    }
+            } finally {
+                _googleBusy.value = false
+            }
+        }
+    }
+
+    fun clearAuthMessage() {
+        _authMessage.value = null
+    }
+
     fun connectAll() {
         val current = _accounts.value
-        val filled = current.filter { it.email.trim().isNotEmpty() }
+        val filled = current.filter {
+            it.email.trim().isNotEmpty() &&
+                it.provider != Provider.GOOGLE &&
+                it.state != ConnectionState.CONNECTING
+        }
         if (filled.isEmpty()) return
 
         _accounts.value = current.map {
-            if (it.email.trim().isEmpty()) it
-            else it.copy(state = ConnectionState.CONNECTING)
+            if (
+                it.email.trim().isNotEmpty() &&
+                it.provider != Provider.GOOGLE
+            ) {
+                it.copy(state = ConnectionState.CONNECTING)
+            } else {
+                it
+            }
         }
 
         viewModelScope.launch {
@@ -52,8 +122,14 @@ class MailViewModel(app: Application) : AndroidViewModel(app) {
             }.awaitAll()
 
             val connected = _accounts.value.map {
-                if (it.email.trim().isEmpty()) it
-                else it.copy(state = ConnectionState.CONNECTED)
+                if (
+                    it.email.trim().isNotEmpty() &&
+                    it.provider != Provider.GOOGLE
+                ) {
+                    it.copy(state = ConnectionState.CONNECTED)
+                } else {
+                    it
+                }
             }
 
             _accounts.value = connected

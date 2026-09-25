@@ -48,6 +48,8 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -69,6 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.trimaill.app.data.GoogleAuthPolicy
 import com.trimaill.app.model.ConnectionState
 import com.trimaill.app.model.MailAccount
 import com.trimaill.app.model.MailItem
@@ -100,11 +103,23 @@ private fun TriMailTheme(content: @Composable () -> Unit) {
 @Composable
 private fun TriMailApp(vm: MailViewModel = viewModel()) {
     val accounts by vm.accounts.collectAsState()
+    val authMessage by vm.authMessage.collectAsState()
+    val googleBusy by vm.googleBusy.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     var screen by rememberSaveable { mutableStateOf(Screen.INBOX) }
     var selectedAccount by rememberSaveable { mutableIntStateOf(-1) }
 
-    val connectedCount = accounts.count { it.email.isNotBlank() }
+    val connectedCount = accounts.count {
+        it.email.isNotBlank() && it.state == ConnectionState.CONNECTED
+    }
     val hasAccounts = connectedCount > 0
+
+    LaunchedEffect(authMessage) {
+        authMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            vm.clearAuthMessage()
+        }
+    }
 
     LaunchedEffect(connectedCount) {
         if (!hasAccounts && screen == Screen.INBOX) screen = Screen.ACCOUNTS
@@ -112,6 +127,7 @@ private fun TriMailApp(vm: MailViewModel = viewModel()) {
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 when (screen) {
                     Screen.INBOX -> TopAppBar(
@@ -189,12 +205,16 @@ private fun TriMailApp(vm: MailViewModel = viewModel()) {
                 Screen.ACCOUNTS -> AccountsScreen(
                     padding = padding,
                     accounts = accounts,
+                    googleBusy = googleBusy,
                     onUpdate = vm::updateAccount,
+                    onConnectGoogle = vm::connectGoogle,
                     onConnectAll = vm::connectAll
                 )
                 Screen.COMPOSE -> ComposeScreen(
                     padding = padding,
-                    accounts = accounts.filter { it.email.isNotBlank() },
+                    accounts = accounts.filter {
+                        it.email.isNotBlank() && it.state == ConnectionState.CONNECTED
+                    },
                     initialAccount = accounts.firstOrNull { it.email.isNotBlank() }?.slot ?: -1,
                     onDone = { screen = Screen.INBOX }
                 )
@@ -234,7 +254,9 @@ private fun InboxScreen(
                 onClick = { onSelect(-1) },
                 label = { Text("All") }
             )
-            accounts.filter { it.email.isNotBlank() }.forEach { account ->
+            accounts.filter {
+                it.email.isNotBlank() && it.state == ConnectionState.CONNECTED
+            }.forEach { account ->
                 FilterChip(
                     selected = selectedAccount == account.slot,
                     onClick = { onSelect(account.slot) },
@@ -313,7 +335,9 @@ private fun MailCard(mail: MailItem, account: MailAccount?) {
 private fun AccountsScreen(
     padding: PaddingValues,
     accounts: List<MailAccount>,
+    googleBusy: Boolean,
     onUpdate: (Int, String, Provider) -> Unit,
+    onConnectGoogle: (Int, String) -> Unit,
     onConnectAll: () -> Unit
 ) {
     Column(
@@ -336,18 +360,25 @@ private fun AccountsScreen(
         Spacer(Modifier.height(18.dp))
 
         accounts.forEach { account ->
-            AccountCard(account, onUpdate)
+            AccountCard(
+                account = account,
+                googleBusy = googleBusy,
+                onUpdate = onUpdate,
+                onConnectGoogle = onConnectGoogle
+            )
             Spacer(Modifier.height(12.dp))
         }
 
         Button(
             onClick = onConnectAll,
             enabled = accounts.any {
-                it.email.isNotBlank() && it.state != ConnectionState.CONNECTING
+                it.email.isNotBlank() &&
+                    it.provider != Provider.GOOGLE &&
+                    it.state != ConnectionState.CONNECTING
             },
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
-            Text("Connect all filled accounts")
+            Text("Connect non-Google accounts")
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -356,7 +387,9 @@ private fun AccountsScreen(
 @Composable
 private fun AccountCard(
     account: MailAccount,
-    onUpdate: (Int, String, Provider) -> Unit
+    googleBusy: Boolean,
+    onUpdate: (Int, String, Provider) -> Unit,
+    onConnectGoogle: (Int, String) -> Unit
 ) {
     var expanded by rememberSaveable(account.slot) { mutableStateOf(false) }
 
@@ -399,7 +432,13 @@ private fun AccountCard(
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = account.email,
-                onValueChange = { onUpdate(account.slot, it, account.provider) },
+                onValueChange = {
+                    onUpdate(
+                        account.slot,
+                        it,
+                        GoogleAuthPolicy.inferProvider(it, account.provider)
+                    )
+                },
                 label = { Text("Email address") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -420,10 +459,33 @@ private fun AccountCard(
                 }
             }
 
+            if (account.provider == Provider.GOOGLE && account.email.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { onConnectGoogle(account.slot, account.email) },
+                    enabled = !googleBusy && account.state != ConnectionState.CONNECTING,
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    Text(
+                        if (account.state == ConnectionState.CONNECTING) {
+                            "Connecting with Google…"
+                        } else {
+                            "Continue with Google"
+                        }
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Google will verify that the selected Google account matches this email.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             if (expanded) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Provider authorization stays outside this local account-slot UI.",
+                    "Google uses Android Credential Manager. TriMail never stores your Google password.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
