@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -48,7 +49,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
@@ -105,124 +105,119 @@ private fun TriMailTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun TriMailApp(vm: MailViewModel = viewModel()) {
     val accounts by vm.accounts.collectAsState()
     var screen by rememberSaveable { mutableStateOf(Screen.INBOX) }
     var selectedAccount by rememberSaveable { mutableIntStateOf(-1) }
+    val hasAccounts = accounts.any { it.email.isNotBlank() }
 
-    val hasAnyAccount = accounts.any { it.email.isNotBlank() }
-
-    LaunchedEffect(accounts) {
-        if (!hasAnyAccount && screen == Screen.INBOX) {
+    LaunchedEffect(hasAccounts) {
+        if (!hasAccounts && screen == Screen.INBOX) {
             screen = Screen.ACCOUNTS
         }
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Scaffold(
-            topBar = {
-                when (screen) {
-                    Screen.INBOX -> TopAppBar(
-                        title = {
-                            Column {
-                                Text("Inbox", fontWeight = FontWeight.Bold)
-                                Text(
-                                    if (hasAnyAccount) {
-                                        "${accounts.count { it.email.isNotBlank() }} accounts connected"
-                                    } else {
-                                        "Set up your mailboxes"
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { screen = Screen.ACCOUNTS }) {
-                                Icon(Icons.Default.Menu, contentDescription = "Accounts")
-                            }
-                        },
-                        actions = {
-                            IconButton(onClick = { screen = Screen.COMPOSE }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Compose")
-                            }
+    Scaffold(
+        topBar = {
+            when (screen) {
+                Screen.INBOX -> TopAppBar(
+                    title = {
+                        Column {
+                            Text("Inbox", fontWeight = FontWeight.Bold)
+                            Text(
+                                if (hasAccounts) {
+                                    accounts.count { it.email.isNotBlank() }.toString() + " accounts connected"
+                                } else {
+                                    "Set up your mailboxes"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    )
-
-                    Screen.ACCOUNTS -> TopAppBar(
-                        title = { Text("Mailboxes", fontWeight = FontWeight.Bold) },
-                        navigationIcon = {
-                            if (hasAnyAccount) {
-                                IconButton(onClick = { screen = Screen.INBOX }) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                                }
-                            }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { screen = Screen.ACCOUNTS }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Accounts")
                         }
-                    )
+                    },
+                    actions = {
+                        IconButton(onClick = { screen = Screen.COMPOSE }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Compose")
+                        }
+                    }
+                )
 
-                    Screen.COMPOSE -> TopAppBar(
-                        title = { Text("Compose", fontWeight = FontWeight.Bold) },
-                        navigationIcon = {
+                Screen.ACCOUNTS -> TopAppBar(
+                    title = { Text("Mailboxes", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        if (hasAccounts) {
                             IconButton(onClick = { screen = Screen.INBOX }) {
                                 Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                             }
                         }
+                    }
+                )
+
+                Screen.COMPOSE -> TopAppBar(
+                    title = { Text("Compose", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = { screen = Screen.INBOX }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                )
+            }
+        },
+        bottomBar = {
+            if (screen != Screen.COMPOSE) {
+                NavigationBar(Modifier.navigationBarsPadding()) {
+                    NavigationBarItem(
+                        selected = screen == Screen.INBOX,
+                        onClick = { screen = Screen.INBOX },
+                        icon = { Icon(Icons.Default.Inbox, contentDescription = null) },
+                        label = { Text("Inbox") }
+                    )
+                    NavigationBarItem(
+                        selected = screen == Screen.ACCOUNTS,
+                        onClick = { screen = Screen.ACCOUNTS },
+                        icon = { Icon(Icons.Default.Tune, contentDescription = null) },
+                        label = { Text("Accounts") }
                     )
                 }
-            },
-            bottomBar = {
-                if (screen != Screen.COMPOSE) {
-                    NavigationBar(Modifier.navigationBarsPadding()) {
-                        NavigationBarItem(
-                            selected = screen == Screen.INBOX,
-                            onClick = { screen = Screen.INBOX },
-                            icon = { Icon(Icons.Default.Inbox, contentDescription = null) },
-                            label = { Text("Inbox") }
-                        )
-                        NavigationBarItem(
-                            selected = screen == Screen.ACCOUNTS,
-                            onClick = { screen = Screen.ACCOUNTS },
-                            icon = { Icon(Icons.Default.Tune, contentDescription = null) },
-                            label = { Text("Accounts") }
-                        )
-                    }
+            }
+        }
+    ) { padding ->
+        when (screen) {
+            Screen.INBOX -> InboxScreen(
+                padding = padding,
+                accounts = accounts,
+                selectedAccount = selectedAccount,
+                onSelect = { selectedAccount = it },
+                mails = vm.inbox().filter {
+                    selectedAccount == -1 || it.accountSlot == selectedAccount
                 }
-            }
-        ) { padding ->
-            when (screen) {
-                Screen.INBOX -> InboxScreen(
-                    padding = padding,
-                    accounts = accounts,
-                    selectedAccount = selectedAccount,
-                    onSelect = { selectedAccount = it },
-                    mails = vm.inbox().filter {
-                        selectedAccount == -1 || it.accountSlot == selectedAccount
-                    }
-                )
+            )
 
-                Screen.ACCOUNTS -> AccountsScreen(
-                    padding = padding,
-                    accounts = accounts,
-                    onUpdate = vm::updateAccount,
-                    onConnectAll = vm::connectAll
-                )
+            Screen.ACCOUNTS -> AccountsScreen(
+                padding = padding,
+                accounts = accounts,
+                onUpdate = vm::updateAccount,
+                onConnectAll = vm::connectAll
+            )
 
-                Screen.COMPOSE -> ComposeScreen(
-                    padding = padding,
-                    accounts = accounts.filter { it.email.isNotBlank() },
-                    initialAccount = accounts.firstOrNull { it.email.isNotBlank() }?.slot ?: -1,
-                    onDone = { screen = Screen.INBOX }
-                )
-            }
+            Screen.COMPOSE -> ComposeScreen(
+                padding = padding,
+                accounts = accounts.filter { it.email.isNotBlank() },
+                initialAccount = accounts.firstOrNull { it.email.isNotBlank() }?.slot ?: -1,
+                onDone = { screen = Screen.INBOX }
+            )
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InboxScreen(
     padding: PaddingValues,
@@ -232,11 +227,10 @@ private fun InboxScreen(
     mails: List<MailItem>
 ) {
     Column(
-        Modifier.fillMaxSize()
-            .padding(padding)
-            .padding(horizontal = 16.dp)
+        Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(8.dp))
+
         OutlinedTextField(
             value = "",
             onValueChange = {},
@@ -246,6 +240,7 @@ private fun InboxScreen(
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             singleLine = true
         )
+
         Spacer(Modifier.height(12.dp))
 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -264,6 +259,7 @@ private fun InboxScreen(
         }
 
         Spacer(Modifier.height(10.dp))
+
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(bottom = 100.dp)
@@ -301,7 +297,9 @@ private fun MailCard(mail: MailItem, account: MailAccount?) {
             ) {
                 Text(account?.provider?.letter ?: "T", fontWeight = FontWeight.Bold)
             }
+
             Spacer(Modifier.width(12.dp))
+
             Column(Modifier.weight(1f)) {
                 Row(Modifier.fillMaxWidth()) {
                     Text(
@@ -316,11 +314,13 @@ private fun MailCard(mail: MailItem, account: MailAccount?) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
                 Text(
                     mail.subject,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (mail.unread) FontWeight.Bold else FontWeight.Normal
                 )
+
                 Text(
                     mail.preview,
                     style = MaterialTheme.typography.bodyMedium,
@@ -346,16 +346,20 @@ private fun AccountsScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(8.dp))
+
         Text(
             "Connect three mailboxes together",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
+
         Spacer(Modifier.height(6.dp))
+
         Text(
-            "Each slot is independent, and all filled slots start connecting at the same time.",
+            "Each filled slot starts connecting independently and at the same time.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
         Spacer(Modifier.height(18.dp))
 
         accounts.forEach { account ->
@@ -399,10 +403,12 @@ private fun AccountCard(
                 ) {
                     Text(account.provider.letter, fontWeight = FontWeight.Bold)
                 }
+
                 Spacer(Modifier.width(12.dp))
+
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Account ${account.slot + 1}",
+                        "Account " + (account.slot + 1),
                         fontWeight = FontWeight.Bold
                     )
                     Text(
@@ -415,12 +421,14 @@ private fun AccountCard(
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
+
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings")
                 }
             }
 
             Spacer(Modifier.height(12.dp))
+
             OutlinedTextField(
                 value = account.email,
                 onValueChange = {
@@ -433,6 +441,7 @@ private fun AccountCard(
             )
 
             Spacer(Modifier.height(10.dp))
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Provider.entries.forEach { provider ->
                     FilterChip(
@@ -448,7 +457,7 @@ private fun AccountCard(
             if (expanded) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Provider authorization stays outside this native account-slot UI.",
+                    "Provider authorization is intentionally handled outside this local account-slot UI.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -457,6 +466,7 @@ private fun AccountCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ComposeScreen(
     padding: PaddingValues,
@@ -476,6 +486,7 @@ private fun ComposeScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(8.dp))
+
         Text("Send from", style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
 
@@ -499,6 +510,7 @@ private fun ComposeScreen(
         }
 
         Spacer(Modifier.height(14.dp))
+
         OutlinedTextField(
             value = to,
             onValueChange = { to = it },
@@ -507,7 +519,9 @@ private fun ComposeScreen(
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
         )
+
         Spacer(Modifier.height(10.dp))
+
         OutlinedTextField(
             value = subject,
             onValueChange = { subject = it },
@@ -515,7 +529,9 @@ private fun ComposeScreen(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
+
         Spacer(Modifier.height(10.dp))
+
         OutlinedTextField(
             value = body,
             onValueChange = { body = it },
@@ -523,7 +539,9 @@ private fun ComposeScreen(
             modifier = Modifier.fillMaxWidth().height(260.dp),
             minLines = 10
         )
+
         Spacer(Modifier.height(16.dp))
+
         Button(
             onClick = onDone,
             enabled = selected >= 0 && to.isNotBlank() && subject.isNotBlank(),
@@ -533,6 +551,7 @@ private fun ComposeScreen(
             Spacer(Modifier.width(8.dp))
             Text("Send")
         }
+
         Spacer(Modifier.height(24.dp))
     }
 }
