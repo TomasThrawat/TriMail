@@ -19,12 +19,10 @@ class AccountStore(context: Context) {
             provider = runCatching {
                 Provider.valueOf(providerName)
             }.getOrDefault(Provider.GOOGLE),
-            state = if (
-                email.isNotBlank() && prefs.getBoolean("connected_" + slot, false)
-            ) {
-                ConnectionState.CONNECTED
-            } else {
-                ConnectionState.EMPTY
+            state = when {
+                email.isBlank() -> ConnectionState.EMPTY
+                prefs.getBoolean("connected_" + slot, false) -> ConnectionState.CONNECTED
+                else -> ConnectionState.CONFIGURED
             }
         )
     }

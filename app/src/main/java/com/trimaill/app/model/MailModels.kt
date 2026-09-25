@@ -6,7 +6,7 @@ enum class Provider(val label: String, val letter: String) {
     YAHOO("Yahoo", "Y")
 }
 
-enum class ConnectionState { EMPTY, CONNECTING, CONNECTED }
+enum class ConnectionState { EMPTY, CONFIGURED, CONNECTING, CONNECTED }
 
 data class MailAccount(
     val slot: Int,

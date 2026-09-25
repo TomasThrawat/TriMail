@@ -28,17 +28,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -46,12 +51,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -124,6 +131,15 @@ private fun TriMailApp(vm: MailViewModel = viewModel()) {
 
     LaunchedEffect(connectedCount) {
         if (!hasAccounts && screen == Screen.INBOX) screen = Screen.ACCOUNTS
+    }
+
+    LaunchedEffect(accounts, selectedAccount) {
+        if (
+            selectedAccount != -1 &&
+            accounts.none { it.slot == selectedAccount && it.email.isNotBlank() && it.state == ConnectionState.CONNECTED }
+        ) {
+            selectedAccount = -1
+        }
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -208,8 +224,10 @@ private fun TriMailApp(vm: MailViewModel = viewModel()) {
                     accounts = accounts,
                     googleBusy = googleBusy,
                     onUpdate = vm::updateAccount,
+                    onSaveAll = vm::saveAccounts,
                     onConnectGoogle = vm::connectGoogle,
-                    onConnectAll = vm::connectAll
+                    onConnectAll = vm::connectAll,
+                    onDelete = vm::deleteAccount
                 )
                 Screen.COMPOSE -> ComposeScreen(
                     padding = padding,
@@ -232,6 +250,13 @@ private fun InboxScreen(
     onSelect: (Int) -> Unit,
     mails: List<MailItem>
 ) {
+    val connectedAccounts = accounts.filter {
+        it.email.isNotBlank() && it.state == ConnectionState.CONNECTED
+    }
+    val selectedLabel = connectedAccounts.firstOrNull { it.slot == selectedAccount }?.email
+        ?: "All mailboxes"
+    var mailboxMenuExpanded by rememberSaveable { mutableStateOf(false) }
+
     Column(
         Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
     ) {
@@ -255,16 +280,48 @@ private fun InboxScreen(
                 onClick = { onSelect(-1) },
                 label = { Text("All") }
             )
-            accounts.filter {
-                it.email.isNotBlank() && it.state == ConnectionState.CONNECTED
-            }.forEach { account ->
-                FilterChip(
-                    selected = selectedAccount == account.slot,
-                    onClick = { onSelect(account.slot) },
-                    label = { Text(account.provider.label) }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { mailboxMenuExpanded = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    selectedLabel,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1
+                )
+                Icon(
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Choose mailbox"
                 )
             }
+
+            DropdownMenu(
+                expanded = mailboxMenuExpanded,
+                onDismissRequest = { mailboxMenuExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("All mailboxes") },
+                    onClick = {
+                        onSelect(-1)
+                        mailboxMenuExpanded = false
+                    }
+                )
+                connectedAccounts.forEach { account ->
+                    DropdownMenuItem(
+                        text = { Text(account.email) },
+                        onClick = {
+                            onSelect(account.slot)
+                            mailboxMenuExpanded = false
+                        }
+                    )
+                }
+            }
         }
+
         Spacer(Modifier.height(10.dp))
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -338,9 +395,13 @@ private fun AccountsScreen(
     accounts: List<MailAccount>,
     googleBusy: Boolean,
     onUpdate: (Int, String, Provider) -> Unit,
+    onSaveAll: () -> Unit,
     onConnectGoogle: (Int, String) -> Unit,
-    onConnectAll: () -> Unit
+    onConnectAll: () -> Unit,
+    onDelete: (Int) -> Unit
 ) {
+    var deleteTarget by remember { mutableStateOf<Int?>(null) }
+
     Column(
         Modifier.fillMaxSize()
             .padding(padding)
@@ -349,13 +410,13 @@ private fun AccountsScreen(
     ) {
         Spacer(Modifier.height(8.dp))
         Text(
-            "Connect three mailboxes together",
+            "Add up to 3 email accounts",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Each filled slot starts independently at the same time.",
+            "Enter one, two, or three emails, then add them together.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(18.dp))
@@ -365,23 +426,62 @@ private fun AccountsScreen(
                 account = account,
                 googleBusy = googleBusy,
                 onUpdate = onUpdate,
-                onConnectGoogle = onConnectGoogle
+                onConnectGoogle = onConnectGoogle,
+                onDelete = { deleteTarget = account.slot }
             )
             Spacer(Modifier.height(12.dp))
         }
+
+        Button(
+            onClick = onSaveAll,
+            enabled = accounts.any { it.email.isNotBlank() },
+            modifier = Modifier.fillMaxWidth().height(56.dp)
+        ) {
+            Text("Add mailboxes")
+        }
+
+        Spacer(Modifier.height(10.dp))
 
         Button(
             onClick = onConnectAll,
             enabled = accounts.any {
                 it.email.isNotBlank() &&
                     it.provider != Provider.GOOGLE &&
+                    it.state != ConnectionState.CONNECTED &&
                     it.state != ConnectionState.CONNECTING
             },
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
-            Text("Connect non-Google accounts")
+            Text("Connect non-Google mailboxes")
         }
+
         Spacer(Modifier.height(24.dp))
+    }
+
+    deleteTarget?.let { slot ->
+        val account = accounts.firstOrNull { it.slot == slot }
+        if (account != null && account.email.isNotBlank()) {
+            AlertDialog(
+                onDismissRequest = { deleteTarget = null },
+                title = { Text("Delete mailbox?") },
+                text = { Text("Remove " + account.email + " from TriMail?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onDelete(slot)
+                            deleteTarget = null
+                        }
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { deleteTarget = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -390,7 +490,8 @@ private fun AccountCard(
     account: MailAccount,
     googleBusy: Boolean,
     onUpdate: (Int, String, Provider) -> Unit,
-    onConnectGoogle: (Int, String) -> Unit
+    onConnectGoogle: (Int, String) -> Unit,
+    onDelete: () -> Unit
 ) {
     var expanded by rememberSaveable(account.slot) { mutableStateOf(false) }
 
@@ -419,11 +520,18 @@ private fun AccountCard(
                         when (account.state) {
                             ConnectionState.CONNECTING -> "Connecting…"
                             ConnectionState.CONNECTED -> "Connected"
-                            ConnectionState.EMPTY -> "Ready to connect"
+                            ConnectionState.CONFIGURED -> "Ready to connect"
+                            ConnectionState.EMPTY -> "Empty"
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium
                     )
+                }
+                IconButton(
+                    onClick = onDelete,
+                    enabled = account.email.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete mailbox")
                 }
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings")

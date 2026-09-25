@@ -8,6 +8,7 @@ import com.trimaill.app.data.GoogleAuthClient
 import com.trimaill.app.data.MailRepository
 import com.trimaill.app.model.ConnectionState
 import com.trimaill.app.model.MailAccount
+import com.trimaill.app.model.MailItem
 import com.trimaill.app.model.Provider
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -34,9 +35,13 @@ class MailViewModel(app: Application) : AndroidViewModel(app) {
         _accounts.value = _accounts.value.map {
             if (it.slot == slot) {
                 it.copy(
-                    email = email,
+                    email = email.trimStart(),
                     provider = provider,
-                    state = ConnectionState.EMPTY
+                    state = if (email.isBlank()) {
+                        ConnectionState.EMPTY
+                    } else {
+                        ConnectionState.CONFIGURED
+                    }
                 )
             } else {
                 it
@@ -44,10 +49,35 @@ class MailViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun saveAccounts() {
+        val normalized = _accounts.value.map { account ->
+            when {
+                account.email.isBlank() -> account.copy(state = ConnectionState.EMPTY)
+                account.state == ConnectionState.CONNECTED -> account
+                else -> account.copy(state = ConnectionState.CONFIGURED)
+            }
+        }
+        _accounts.value = normalized
+        store.save(normalized)
+    }
+
+    fun deleteAccount(slot: Int) {
+        val updated = _accounts.value.map {
+            if (it.slot == slot) {
+                MailAccount(slot = slot)
+            } else {
+                it
+            }
+        }
+        _accounts.value = updated
+        store.save(updated)
+    }
+
     fun connectGoogle(slot: Int, typedEmail: String) {
         val email = typedEmail.trim()
         if (email.isBlank() || _googleBusy.value) return
 
+        saveAccounts()
         _googleBusy.value = true
         _accounts.value = _accounts.value.map {
             if (it.slot == slot) {
@@ -79,11 +109,12 @@ class MailViewModel(app: Application) : AndroidViewModel(app) {
                     .onFailure { error ->
                         _accounts.value = _accounts.value.map {
                             if (it.slot == slot) {
-                                it.copy(state = ConnectionState.EMPTY)
+                                it.copy(state = ConnectionState.CONFIGURED)
                             } else {
                                 it
                             }
                         }
+                        store.save(_accounts.value)
                         _authMessage.value = error.message ?: "Google sign-in failed."
                     }
             } finally {
@@ -97,19 +128,19 @@ class MailViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun connectAll() {
+        saveAccounts()
         val current = _accounts.value
         val filled = current.filter {
             it.email.trim().isNotEmpty() &&
                 it.provider != Provider.GOOGLE &&
-                it.state != ConnectionState.CONNECTING
+                it.state == ConnectionState.CONFIGURED
         }
         if (filled.isEmpty()) return
 
+        val slots = filled.map { it.slot }.toSet()
+
         _accounts.value = current.map {
-            if (
-                it.email.trim().isNotEmpty() &&
-                it.provider != Provider.GOOGLE
-            ) {
+            if (it.slot in slots) {
                 it.copy(state = ConnectionState.CONNECTING)
             } else {
                 it
@@ -122,7 +153,7 @@ class MailViewModel(app: Application) : AndroidViewModel(app) {
             }.awaitAll()
 
             val connected = _accounts.value.map {
-                if (
+                if (it.slot in slots &&
                     it.email.trim().isNotEmpty() &&
                     it.provider != Provider.GOOGLE
                 ) {
@@ -137,5 +168,5 @@ class MailViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun inbox(): List<com.trimaill.app.model.MailItem> = repository.inbox(_accounts.value)
+    fun inbox(): List<MailItem> = repository.inbox(_accounts.value)
 }

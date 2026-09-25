@@ -1,6 +1,7 @@
 package com.trimaill.app.data
 
 import com.trimaill.app.model.MailAccount
+import com.trimaill.app.model.ConnectionState
 import com.trimaill.app.model.MailItem
 import kotlinx.coroutines.delay
 
@@ -10,7 +11,7 @@ class MailRepository {
     }
 
     fun inbox(accounts: List<MailAccount>): List<MailItem> {
-        val active = accounts.filter { it.email.isNotBlank() }
+        val active = accounts.filter { it.email.isNotBlank() && it.state == ConnectionState.CONNECTED }
 
         if (active.isEmpty()) {
             return listOf(
