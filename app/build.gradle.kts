@@ -15,7 +15,7 @@ android {
         versionName = "1.0"
 
         val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID").orNull.orEmpty()
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", ""$googleWebClientId"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
     }
 
     buildTypes {
