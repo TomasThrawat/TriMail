@@ -8,8 +8,8 @@ android {
     compileSdk = 35
 
     val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID").orNull.orEmpty()
-    val escapedGoogleWebClientId = googleWebClientId
         .replace("\", "\\")
+        .replace(""", "\"")
         .replace(""", "\"")
 
     defaultConfig {
