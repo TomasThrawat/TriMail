@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.trimaill.app"
-    compileSdk = 37
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.trimaill.app"

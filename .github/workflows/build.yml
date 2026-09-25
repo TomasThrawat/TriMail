@@ -13,6 +13,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: init.defaultBranch
+      GIT_CONFIG_VALUE_0: main
     steps:
       - uses: actions/checkout@v7
 
@@ -21,9 +25,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Android SDK requirements
+      - name: Verify preinstalled Android SDK
         run: |
-          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+          test -d "$ANDROID_SDK_ROOT/platforms/android-35"
+          test -d "$ANDROID_SDK_ROOT/build-tools/35.0.0"
 
       - uses: gradle/actions/setup-gradle@v6
         with:
